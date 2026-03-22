@@ -1,0 +1,8 @@
+[project]
+name = "quasar-spl-token"
+
+[toolchain]
+type = "solana"
+
+[testing]
+framework = "quasarsvm-rust"
