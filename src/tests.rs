@@ -236,3 +236,90 @@ fn test_mint_tokens() {
         "mint supply should equal mint amount"
     );
 }
+
+#[test]
+fn test_transfer_tokens() {
+    let mut svm = setup();
+
+    let authority = Pubkey::new_unique();
+    let mint = Pubkey::new_unique();
+    let from = Pubkey::new_unique();
+    let to = Pubkey::new_unique();
+
+    svm.airdrop(&authority, 10_000_000_000);
+
+    // Pre-create mint
+    let mint_state = Mint {
+        mint_authority: solana_program_option::COption::Some(authority),
+        supply: 1_000_000,
+        decimals: 6,
+        is_initialized: true,
+        freeze_authority: solana_program_option::COption::None,
+    };
+    svm.set_account(token::create_keyed_mint_account(&mint, &mint_state));
+
+    // Source token account with 1_000_000 tokens
+    let from_state = TokenAccount {
+        mint,
+        owner: authority,
+        amount: 1_000_000,
+        state: spl_token_interface::state::AccountState::Initialized,
+        ..TokenAccount::default()
+    };
+    svm.set_account(token::create_keyed_token_account(&from, &from_state));
+
+    // Destination token account with 0 tokens
+    let to_state = TokenAccount {
+        mint,
+        owner: Pubkey::new_unique(), // this is the different owner
+        amount: 0,
+        state: spl_token_interface::state::AccountState::Initialized,
+        ..TokenAccount::default()
+    };
+    svm.set_account(token::create_keyed_token_account(&to, &to_state));
+
+    let transfer_amount: u64 = 500_000;
+
+    let instruction: Instruction = TransferInstruction {
+        authority: to_address(&authority),
+        from: to_address(&from),
+        to: to_address(&to),
+        token_program: to_address(&TOKEN_PROGRAM_ID),
+        amount: transfer_amount,
+    }
+    .into();
+
+    let result = svm.process_instruction(
+        &instruction,
+        &[Account {
+            address: authority,
+            lamports: 10_000_000_000,
+            data: vec![],
+            owner: quasar_svm::system_program::ID,
+            executable: false,
+        }],
+    );
+
+    result.assert_success();
+
+    // Verify source balance decreased
+    let from_acc = result
+        .account(&from)
+        .expect("source token account not found");
+    let from_after = TokenAccount::unpack(&from_acc.data).expect("failed to unpack source");
+    assert_eq!(
+        from_after.amount,
+        1_000_000 - transfer_amount,
+        "source balance should decrease"
+    );
+
+    // Verify destination balance increased
+    let to_acc = result
+        .account(&to)
+        .expect("destination token account not found");
+    let to_after = TokenAccount::unpack(&to_acc.data).expect("failed to unpack destination");
+    assert_eq!(
+        to_after.amount, transfer_amount,
+        "destination balance should increase"
+    );
+}
