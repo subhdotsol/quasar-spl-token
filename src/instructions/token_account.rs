@@ -17,3 +17,12 @@ pub struct CreateTokenAccount<'info> {
     pub token_program: &'info Program<Token>,
     pub system_program: &'info Program<System>,
 }
+
+impl<'info> CreateTokenAccount<'info> {
+    #[inline(always)]
+    pub fn create_token_account(&self) -> Result<(), ProgramError> {
+        // #[account(init, token::mint, token::authority)] handles
+        // the CreateAccount + InitializeAccount3 CPIs automatically.
+        Ok(())
+    }
+}
