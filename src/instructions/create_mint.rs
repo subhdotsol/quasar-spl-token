@@ -16,3 +16,12 @@ pub struct CreateMint<'info> {
     pub token_program: &'info Program<Token>,
     pub system_program: &'info Program<System>,
 }
+
+impl<'info> CreateMint<'info> {
+    #[inline(always)]
+    pub fn create_mint(&self) -> Result<(), ProgramError> {
+        // #[account(init, mint::decimals, mint::authority)] handles
+        // the CreateAccount + InitializeMint2 CPIs automatically.
+        Ok(())
+    }
+}
