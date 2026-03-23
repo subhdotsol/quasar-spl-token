@@ -87,3 +87,79 @@ fn test_create_mint() {
     assert!(mint_state.is_initialized, "mint should be initialized");
     assert_eq!(mint_state.supply, 0, "initial supply should be 0");
 }
+
+#[test]
+fn test_create_token_account() {
+    let mut svm = setup();
+
+    let payer = Pubkey::new_unique();
+    let owner = Pubkey::new_unique();
+    let mint = Pubkey::new_unique();
+    let token_account = Pubkey::new_unique();
+
+    svm.airdrop(&payer, 10_000_000_000);
+
+    // Pre-create a mint account
+    let mint_state = Mint {
+        mint_authority: solana_program_option::COption::Some(payer),
+        supply: 0,
+        decimals: 6,
+        is_initialized: true,
+        freeze_authority: solana_program_option::COption::None,
+    };
+    svm.set_account(token::create_keyed_mint_account(&mint, &mint_state));
+
+    let rent_sysvar = solana_pubkey::pubkey!("SysvarRent111111111111111111111111111111111");
+
+    let instruction: Instruction = with_signers(
+        CreateTokenAccountInstruction {
+            payer: to_address(&payer),
+            owner: to_address(&owner),
+            mint: to_address(&mint),
+            token_account: to_address(&token_account),
+            rent: to_address(&rent_sysvar),
+            token_program: to_address(&TOKEN_PROGRAM_ID),
+            system_program: to_address(&quasar_svm::system_program::ID),
+        }
+        .into(),
+        &[3], // token_account needs to be a signer for create_account CPI
+    );
+
+    // Pass payer, owner, and token_account (uninitialized) as accounts
+    let result = svm.process_instruction(
+        &instruction,
+        &[
+            Account {
+                address: payer,
+                lamports: 10_000_000_000,
+                data: vec![],
+                owner: quasar_svm::system_program::ID,
+                executable: false,
+            },
+            Account {
+                address: token_account,
+                lamports: 0,
+                data: vec![],
+                owner: quasar_svm::system_program::ID,
+                executable: false,
+            },
+        ],
+    );
+
+    result.assert_success();
+
+    // Verify token account was created
+    let ta = result
+        .account(&token_account)
+        .expect("token account not found");
+    assert_eq!(
+        ta.owner, TOKEN_PROGRAM_ID,
+        "token account owner should be token program"
+    );
+
+    // Verify token account state
+    let ta_state = TokenAccount::unpack(&ta.data).expect("failed to unpack token account");
+    assert_eq!(ta_state.mint, mint, "token account mint mismatch");
+    assert_eq!(ta_state.owner, owner, "token account owner mismatch");
+    assert_eq!(ta_state.amount, 0, "initial balance should be 0");
+}
