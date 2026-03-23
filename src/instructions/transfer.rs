@@ -1,5 +1,5 @@
 use quasar_lang::prelude::*;
-use quasar_spl::Token;
+use quasar_spl::{Token, TokenCpi};
 
 #[derive(Accounts)]
 pub struct TransferTokens<'info> {
@@ -9,4 +9,13 @@ pub struct TransferTokens<'info> {
     #[account(mut)]
     pub to: &'info mut Account<Token>,
     pub token_program: &'info Program<Token>,
+}
+
+impl<'info> TransferTokens<'info> {
+    #[inline(always)]
+    pub fn transfer_tokens(&self, amount: u64) -> Result<(), ProgramError> {
+        self.token_program
+            .transfer(self.from, self.to, self.authority, amount)
+            .invoke()
+    }
 }
