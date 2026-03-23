@@ -163,3 +163,76 @@ fn test_create_token_account() {
     assert_eq!(ta_state.owner, owner, "token account owner mismatch");
     assert_eq!(ta_state.amount, 0, "initial balance should be 0");
 }
+
+#[test]
+fn test_mint_tokens() {
+    let mut svm = setup();
+
+    let authority = Pubkey::new_unique();
+    let mint = Pubkey::new_unique();
+    let to = Pubkey::new_unique();
+
+    svm.airdrop(&authority, 10_000_000_000);
+
+    // Pre-create mint account with authority as mint_authority
+    let mint_state = Mint {
+        mint_authority: solana_program_option::COption::Some(authority),
+        supply: 0,
+        decimals: 6,
+        is_initialized: true,
+        freeze_authority: solana_program_option::COption::None,
+    };
+    svm.set_account(token::create_keyed_mint_account(&mint, &mint_state));
+
+    // Pre-create destination token account
+    let token_state = TokenAccount {
+        mint,
+        owner: authority,
+        amount: 0,
+        state: spl_token_interface::state::AccountState::Initialized,
+        ..TokenAccount::default()
+    };
+    svm.set_account(token::create_keyed_token_account(&to, &token_state));
+
+    let mint_amount: u64 = 1_000_000;
+
+    let instruction: Instruction = MintTokensInstruction {
+        authority: to_address(&authority),
+        mint: to_address(&mint),
+        to: to_address(&to),
+        token_program: to_address(&TOKEN_PROGRAM_ID),
+        amount: mint_amount,
+    }
+    .into();
+
+    let result = svm.process_instruction(
+        &instruction,
+        &[Account {
+            address: authority,
+            lamports: 10_000_000_000,
+            data: vec![],
+            owner: quasar_svm::system_program::ID,
+            executable: false,
+        }],
+    );
+
+    result.assert_success();
+
+    // Verify tokens were minted to destination
+    let ta = result
+        .account(&to)
+        .expect("destination token account not found");
+    let ta_state = TokenAccount::unpack(&ta.data).expect("failed to unpack token account");
+    assert_eq!(
+        ta_state.amount, mint_amount,
+        "token balance should equal mint amount"
+    );
+
+    // Verify mint supply increased
+    let mint_acc = result.account(&mint).expect("mint account not found");
+    let mint_after = Mint::unpack(&mint_acc.data).expect("failed to unpack mint");
+    assert_eq!(
+        mint_after.supply, mint_amount,
+        "mint supply should equal mint amount"
+    );
+}
