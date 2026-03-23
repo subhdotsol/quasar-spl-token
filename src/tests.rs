@@ -323,3 +323,71 @@ fn test_transfer_tokens() {
         "destination balance should increase"
     );
 }
+
+#[test]
+fn test_transfer_insufficient_balance() {
+    let mut svm = setup();
+
+    let authority = Pubkey::new_unique();
+    let mint = Pubkey::new_unique();
+    let from = Pubkey::new_unique();
+    let to = Pubkey::new_unique();
+
+    svm.airdrop(&authority, 10_000_000_000);
+
+    // Pre-create mint
+    let mint_state = Mint {
+        mint_authority: solana_program_option::COption::Some(authority),
+        supply: 100,
+        decimals: 6,
+        is_initialized: true,
+        freeze_authority: solana_program_option::COption::None,
+    };
+    svm.set_account(token::create_keyed_mint_account(&mint, &mint_state));
+
+    // Source with only 100 tokens
+    let from_state = TokenAccount {
+        mint,
+        owner: authority,
+        amount: 100,
+        state: spl_token_interface::state::AccountState::Initialized,
+        ..TokenAccount::default()
+    };
+    svm.set_account(token::create_keyed_token_account(&from, &from_state));
+
+    // Destination
+    let to_state = TokenAccount {
+        mint,
+        owner: Pubkey::new_unique(),
+        amount: 0,
+        state: spl_token_interface::state::AccountState::Initialized,
+        ..TokenAccount::default()
+    };
+    svm.set_account(token::create_keyed_token_account(&to, &to_state));
+
+    // Try to transfer 1000 (more than balance)
+    let instruction: Instruction = TransferInstruction {
+        authority: to_address(&authority),
+        from: to_address(&from),
+        to: to_address(&to),
+        token_program: to_address(&TOKEN_PROGRAM_ID),
+        amount: 1000,
+    }
+    .into();
+
+    let result = svm.process_instruction(
+        &instruction,
+        &[Account {
+            address: authority,
+            lamports: 10_000_000_000,
+            data: vec![],
+            owner: quasar_svm::system_program::ID,
+            executable: false,
+        }],
+    );
+
+    assert!(
+        result.is_err(),
+        "transfer with insufficient balance should fail"
+    );
+}
