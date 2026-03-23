@@ -43,6 +43,10 @@ fn test_create_mint() {
     let (mint_pda, _bump) =
         Pubkey::find_program_address(&[b"mint", payer.as_ref()], &Pubkey::from(crate::ID));
 
+    std::println!("\n test_create_mint ");
+    std::println!("  payer:    {}", payer);
+    std::println!("  mint PDA: {}", mint_pda);
+
     let instruction: Instruction = CreateMintInstruction {
         payer: to_address(&payer),
         mint: to_address(&mint_pda),
@@ -73,6 +77,7 @@ fn test_create_mint() {
     );
 
     result.assert_success();
+    std::println!("  ✔ instruction succeeded");
 
     // Verify the mint was created
     let mint_account = result.account(&mint_pda).expect("mint account not found");
@@ -80,12 +85,22 @@ fn test_create_mint() {
         mint_account.owner, TOKEN_PROGRAM_ID,
         "mint owner should be token program"
     );
+    assert_eq!(
+        mint_account.data.len(),
+        Mint::LEN,
+        "mint data should be 82 bytes"
+    );
 
     // Verify mint state
     let mint_state = Mint::unpack(&mint_account.data).expect("failed to unpack mint");
     assert_eq!(mint_state.decimals, 6, "mint decimals should be 6");
     assert!(mint_state.is_initialized, "mint should be initialized");
     assert_eq!(mint_state.supply, 0, "initial supply should be 0");
+
+    std::println!("  ✔ mint created: decimals=6, supply=0");
+    std::println!("  ✔ mint authority: {:?}", mint_state.mint_authority);
+    std::println!("  CU: {}", result.compute_units_consumed);
+    std::println!(" PASSED \n");
 }
 
 #[test]
@@ -110,6 +125,12 @@ fn test_create_token_account() {
     svm.set_account(token::create_keyed_mint_account(&mint, &mint_state));
 
     let rent_sysvar = solana_pubkey::pubkey!("SysvarRent111111111111111111111111111111111");
+
+    std::println!("\n test_create_token_account ");
+    std::println!("  payer:         {}", payer);
+    std::println!("  owner:         {}", owner);
+    std::println!("  mint:          {}", mint);
+    std::println!("  token_account: {}", token_account);
 
     let instruction: Instruction = with_signers(
         CreateTokenAccountInstruction {
@@ -147,6 +168,7 @@ fn test_create_token_account() {
     );
 
     result.assert_success();
+    std::println!("  ✔ instruction succeeded");
 
     // Verify token account was created
     let ta = result
@@ -156,12 +178,23 @@ fn test_create_token_account() {
         ta.owner, TOKEN_PROGRAM_ID,
         "token account owner should be token program"
     );
+    assert_eq!(
+        ta.data.len(),
+        TokenAccount::LEN,
+        "token account data should be 165 bytes"
+    );
 
     // Verify token account state
     let ta_state = TokenAccount::unpack(&ta.data).expect("failed to unpack token account");
     assert_eq!(ta_state.mint, mint, "token account mint mismatch");
     assert_eq!(ta_state.owner, owner, "token account owner mismatch");
     assert_eq!(ta_state.amount, 0, "initial balance should be 0");
+
+    std::println!("  ✔ token account created: mint={}", mint);
+    std::println!("  ✔ token account owner: {}", owner);
+    std::println!("  ✔ initial balance: 0");
+    std::println!("  CU: {}", result.compute_units_consumed);
+    std::println!(" PASSED \n");
 }
 
 #[test]
@@ -196,6 +229,12 @@ fn test_mint_tokens() {
 
     let mint_amount: u64 = 1_000_000;
 
+    std::println!("\n test_mint_tokens ");
+    std::println!("  authority: {}", authority);
+    std::println!("  mint:      {}", mint);
+    std::println!("  to:        {}", to);
+    std::println!("  amount:    {}", mint_amount);
+
     let instruction: Instruction = MintTokensInstruction {
         authority: to_address(&authority),
         mint: to_address(&mint),
@@ -217,6 +256,7 @@ fn test_mint_tokens() {
     );
 
     result.assert_success();
+    std::println!("  ✔ instruction succeeded");
 
     // Verify tokens were minted to destination
     let ta = result
@@ -227,6 +267,7 @@ fn test_mint_tokens() {
         ta_state.amount, mint_amount,
         "token balance should equal mint amount"
     );
+    std::println!("  ✔ destination balance: {} tokens", ta_state.amount);
 
     // Verify mint supply increased
     let mint_acc = result.account(&mint).expect("mint account not found");
@@ -235,6 +276,9 @@ fn test_mint_tokens() {
         mint_after.supply, mint_amount,
         "mint supply should equal mint amount"
     );
+    std::println!("  ✔ mint supply: {}", mint_after.supply);
+    std::println!("  CU: {}", result.compute_units_consumed);
+    std::println!(" PASSED \n");
 }
 
 #[test]
@@ -280,6 +324,12 @@ fn test_transfer_tokens() {
 
     let transfer_amount: u64 = 500_000;
 
+    std::println!("\n test_transfer_tokens ");
+    std::println!("  authority: {}", authority);
+    std::println!("  from:      {} (balance=1000000)", from);
+    std::println!("  to:        {} (balance=0)", to);
+    std::println!("  amount:    {}", transfer_amount);
+
     let instruction: Instruction = TransferInstruction {
         authority: to_address(&authority),
         from: to_address(&from),
@@ -301,6 +351,7 @@ fn test_transfer_tokens() {
     );
 
     result.assert_success();
+    std::println!("  ✔ instruction succeeded");
 
     // Verify source balance decreased
     let from_acc = result
@@ -312,6 +363,11 @@ fn test_transfer_tokens() {
         1_000_000 - transfer_amount,
         "source balance should decrease"
     );
+    std::println!(
+        "  ✔ source balance:      {} → {}",
+        1_000_000u64,
+        from_after.amount
+    );
 
     // Verify destination balance increased
     let to_acc = result
@@ -322,6 +378,9 @@ fn test_transfer_tokens() {
         to_after.amount, transfer_amount,
         "destination balance should increase"
     );
+    std::println!("  ✔ destination balance: 0 → {}", to_after.amount);
+    std::println!("  CU: {}", result.compute_units_consumed);
+    std::println!(" PASSED \n");
 }
 
 #[test]
@@ -365,6 +424,9 @@ fn test_transfer_insufficient_balance() {
     };
     svm.set_account(token::create_keyed_token_account(&to, &to_state));
 
+    std::println!("\n test_transfer_insufficient_balance ");
+    std::println!("  from balance: 100, transfer amount: 1000");
+
     // Try to transfer 1000 (more than balance)
     let instruction: Instruction = TransferInstruction {
         authority: to_address(&authority),
@@ -390,4 +452,7 @@ fn test_transfer_insufficient_balance() {
         result.is_err(),
         "transfer with insufficient balance should fail"
     );
+
+    std::println!("  ✔ correctly rejected: insufficient balance");
+    std::println!(" PASSED \n");
 }
