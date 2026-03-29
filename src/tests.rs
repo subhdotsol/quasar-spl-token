@@ -9,7 +9,7 @@ use solana_program_pack::Pack;
 
 use quasar_spl_token_client::{
     CreateMintInstruction, CreateTokenAccountInstruction, MintTokensInstruction,
-    TransferInstruction,
+    TransferInstruction, BurnInstruction,
 };
 
 const TOKEN_PROGRAM_ID: Pubkey =
@@ -451,6 +451,159 @@ fn test_transfer_insufficient_balance() {
     assert!(
         result.is_err(),
         "transfer with insufficient balance should fail"
+    );
+
+    std::println!("  ✔ correctly rejected: insufficient balance");
+    std::println!(" PASSED \n");
+}
+
+#[test]
+fn test_burn_tokens() {
+    let mut svm = setup();
+
+    let authority = Pubkey::new_unique();
+    let mint = Pubkey::new_unique();
+    let from = Pubkey::new_unique();
+
+    svm.airdrop(&authority, 10_000_000_000);
+
+    // Pre-create mint
+    let mint_state = Mint {
+        mint_authority: solana_program_option::COption::Some(authority),
+        supply: 1_000_000,
+        decimals: 6,
+        is_initialized: true,
+        freeze_authority: solana_program_option::COption::None,
+    };
+    svm.set_account(token::create_keyed_mint_account(&mint, &mint_state));
+
+    // Source token account with 1_000_000 tokens
+    let from_state = TokenAccount {
+        mint,
+        owner: authority,
+        amount: 1_000_000,
+        state: spl_token_interface::state::AccountState::Initialized,
+        ..TokenAccount::default()
+    };
+    svm.set_account(token::create_keyed_token_account(&from, &from_state));
+
+    let burn_amount: u64 = 500_000;
+
+    std::println!("\n test_burn_tokens ");
+    std::println!("  authority: {}", authority);
+    std::println!("  from:      {} (balance=1000000)", from);
+    std::println!("  mint:      {} (supply=1000000)", mint);
+    std::println!("  amount:    {}", burn_amount);
+
+    let instruction: Instruction = BurnInstruction {
+        authority: to_address(&authority),
+        from: to_address(&from),
+        mint: to_address(&mint),
+        token_program: to_address(&TOKEN_PROGRAM_ID),
+        amount: burn_amount,
+    }
+    .into();
+
+    let result = svm.process_instruction(
+        &instruction,
+        &[Account {
+            address: authority,
+            lamports: 10_000_000_000,
+            data: vec![],
+            owner: quasar_svm::system_program::ID,
+            executable: false,
+        }],
+    );
+
+    result.assert_success();
+    std::println!("  ✔ instruction succeeded");
+
+    // Verify source balance decreased
+    let from_acc = result
+        .account(&from)
+        .expect("source token account not found");
+    let from_after = TokenAccount::unpack(&from_acc.data).expect("failed to unpack source");
+    assert_eq!(
+        from_after.amount,
+        1_000_000 - burn_amount,
+        "source balance should decrease"
+    );
+    std::println!(
+        "  ✔ source balance:      {} → {}",
+        1_000_000u64,
+        from_after.amount
+    );
+
+    // Verify mint supply decreased
+    let mint_acc = result.account(&mint).expect("mint account not found");
+    let mint_after = Mint::unpack(&mint_acc.data).expect("failed to unpack mint");
+    assert_eq!(
+        mint_after.supply,
+        1_000_000 - burn_amount,
+        "mint supply should decrease"
+    );
+    std::println!("  ✔ mint supply:         1000000 → {}", mint_after.supply);
+    std::println!("  CU: {}", result.compute_units_consumed);
+    std::println!(" PASSED \n");
+}
+
+#[test]
+fn test_burn_insufficient_balance() {
+    let mut svm = setup();
+
+    let authority = Pubkey::new_unique();
+    let mint = Pubkey::new_unique();
+    let from = Pubkey::new_unique();
+
+    svm.airdrop(&authority, 10_000_000_000);
+
+    // Pre-create mint
+    let mint_state = Mint {
+        mint_authority: solana_program_option::COption::Some(authority),
+        supply: 100,
+        decimals: 6,
+        is_initialized: true,
+        freeze_authority: solana_program_option::COption::None,
+    };
+    svm.set_account(token::create_keyed_mint_account(&mint, &mint_state));
+
+    // Source with only 100 tokens
+    let from_state = TokenAccount {
+        mint,
+        owner: authority,
+        amount: 100,
+        state: spl_token_interface::state::AccountState::Initialized,
+        ..TokenAccount::default()
+    };
+    svm.set_account(token::create_keyed_token_account(&from, &from_state));
+
+    std::println!("\n test_burn_insufficient_balance ");
+    std::println!("  from balance: 100, burn amount: 1000");
+
+    // Try to burn 1000 (more than balance)
+    let instruction: Instruction = BurnInstruction {
+        authority: to_address(&authority),
+        from: to_address(&from),
+        mint: to_address(&mint),
+        token_program: to_address(&TOKEN_PROGRAM_ID),
+        amount: 1000,
+    }
+    .into();
+
+    let result = svm.process_instruction(
+        &instruction,
+        &[Account {
+            address: authority,
+            lamports: 10_000_000_000,
+            data: vec![],
+            owner: quasar_svm::system_program::ID,
+            executable: false,
+        }],
+    );
+
+    assert!(
+        result.is_err(),
+        "burn with insufficient balance should fail"
     );
 
     std::println!("  ✔ correctly rejected: insufficient balance");
