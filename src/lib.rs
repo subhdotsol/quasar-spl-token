@@ -29,6 +29,11 @@ mod quasar_spl_token {
     pub fn transfer(ctx: Ctx<TransferTokens>, amount: u64) -> Result<(), ProgramError> {
         ctx.accounts.transfer_tokens(amount)
     }
+
+    #[instruction(discriminator = 4)]
+    pub fn burn(ctx: Ctx<BurnTokens>, amount: u64) -> Result<(), ProgramError> {
+        ctx.accounts.burn_tokens(amount)
+    }
 }
 
 #[cfg(test)]
